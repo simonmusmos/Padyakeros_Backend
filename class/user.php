@@ -119,7 +119,7 @@ class User{
                 FROM
                     `user_sessions`
                 WHERE
-                    `user_sessions`.`value`='".$this->token."' AND `user_sessions`.`date` BETWEEN '".date("Y-m-d H:i:s", strtotime("-6 minutes"))."' AND '".date("Y-m-d H:i:s")."'";
+                    `user_sessions`.`value`='".$this->token."' AND `user_sessions`.`date` BETWEEN '".date("Y-m-d H:i:s", strtotime("-181 minutes"))."' AND '".date("Y-m-d H:i:s")."'";
         // prepare query statement
         $stmt = $this->conn->prepare($query);
         // execute query
@@ -129,7 +129,7 @@ class User{
             $response['id']=$row['user_id'];
         }else{
              $response['result']=false;
-             $response['message']=date("Y-m-d H:i:s", strtotime("-6 minute"));
+             $response['message']=date("Y-m-d H:i:s", strtotime("-181 minute"));
             // return false;
         }
         return $response;
@@ -138,7 +138,7 @@ class User{
         $response['result']=true;
         // select all query
         $query = "SELECT
-                    user_profile.firstname, user_profile.middlename, user_profile.lastname, users.email, user_profile.status, user_profile.bikeID, user_profile.address, user_profile.contact
+                    user_profile.firstname, user_profile.middlename, user_profile.lastname, users.email, user_profile.status, user_profile.bikeID, user_profile.address, user_profile.contact, user_profile.profileImg
                 FROM
                     user_profile
                 LEFT JOIN users
@@ -197,6 +197,20 @@ class User{
         
         return $response;
     }
+    function updateProfileImage(){
+        $userData=$this->getData("user_profile", " WHERE id='".$this->uid."'", "*");
+        if($userData['result']){
+            if($this->image==""){
+                $this->firstname=$userData['profileImg'];
+            }
+            $response['result']=$this->updateData("user_profile", "profileImg='".$this->image."'", " WHERE id='".$this->uid."'");
+        }else{
+            $response['result']=false;
+            $response['message']="Cannot fetch user info";
+        }
+        
+        return $response;
+    }
     function changePassword(){
         $userData=$this->getData("users", " WHERE id='".$this->uid."'", "*");
         if(password_verify($this->oldPassword, $userData['password'])){
@@ -232,6 +246,47 @@ class User{
         else{
             $row['result']=false;
             $row['message']='Invalid Product.';
+        }
+        return $row;
+    }
+    function getHistory(){
+        $query = "SELECT terminals.name, history.date, history.type, history.id, history.bikeID
+            FROM
+                history
+            LEFT JOIN terminals
+            ON terminals.id = history.terminalID
+            WHERE history.user='".$this->uid."' AND history.type='rent'";
+        // prepare query statement
+        $stmt = $this->conn->prepare($query);
+        // execute query
+        $stmt->execute();
+        $row=array();
+        if($stmt->rowCount() > 0){
+            while($row1 = $stmt->fetch(PDO::FETCH_ASSOC)){
+                $row['data']['start'][]=$row1;
+                $query1 = "SELECT terminals.name, history.date, history.type, history.bikeID
+                    FROM
+                        history
+                    LEFT JOIN terminals
+                    ON terminals.id = history.terminalID
+                    WHERE history.user='".$this->uid."' AND history.type='return' AND history.id > '".$row1['id']."' ORDER BY history.id ASC LIMIT 1";
+                // prepare query statement
+                $stmt1 = $this->conn->prepare($query1);
+                // execute query
+                $stmt1->execute();
+                if($stmt1->rowCount() > 0){
+                    $row2 = $stmt1->fetch(PDO::FETCH_ASSOC);
+                    $row['data']['end'][]=$row2;
+                }else{
+                    $row['data']['end']['message']='currently in ride';
+                }
+            }
+            
+            $row['result']=true;
+        }
+        else{
+            $row['result']=false;
+            $row['message']='No History Available.';
         }
         return $row;
     }
@@ -311,9 +366,13 @@ class User{
             // execute query
             $stmt->execute();
             if($stmt->rowCount() > 0){
+                $row = $stmt->fetch(PDO::FETCH_ASSOC);
                 $this->updateData("user_profile", "status='bike-mode', bikeID='".$this->bikeID."'", " WHERE id='".$this->uid."'");
                 $this->updateData("bikes", "status='used', locationID='0'", " WHERE id='".$this->bikeID."'");
-                $row['result']=true;
+                $this->locationID=$row['locationID'];
+                $this->type="rent";
+                $row['result']=$this->insertHistory();
+                // true;
                 $row['date']=date("Y-m-d H:i:s");
             }
             else{
@@ -342,7 +401,10 @@ class User{
             if($stmt1->rowCount() > 0){
                 $this->updateData("user_profile", "status='no-bike', bikeID='0'", " WHERE id='".$this->uid."'");
                 $this->updateData("bikes", "status='available', locationID='".$this->locationID."'", " WHERE id='".$profile['profile']['bikeID']."'");
-                $row['result']=true;
+                $this->type="return";
+                $this->bikeID=$profile['profile']['bikeID'];
+                $row['result']=$this->insertHistory();
+                // true;
             }else{
                 $row['result']=false;
                 $row['message']='Location Unavailable.';
@@ -381,6 +443,31 @@ class User{
             }
         }else{
             return true;
+        }
+    }
+    function insertHistory(){
+        $query = "INSERT INTO
+                    history
+                SET
+                history.id='', history.user=:user, history.terminalID=:terminal, history.type=:typevar, history.bikeID=:bike, history.date=:dateval";
+        $stmt = $this->conn->prepare($query);
+    
+        // sanitize
+        // $this->email=htmlspecialchars(strip_tags($this->email));
+        // $this->password=htmlspecialchars(strip_tags($this->password));
+        // bind values
+        $stmt->bindParam(":user", $this->uid);
+        $stmt->bindParam(":terminal", $this->locationID);
+        $stmt->bindParam(":bike", $this->bikeID);
+        $stmt->bindParam(":typevar", $this->type);
+        $stmt->bindParam(":dateval", date('Y-m-d H:i:s'));
+        // execute query
+        if($stmt->execute()){
+            // $this->id = $this->conn->lastInsertId();
+            
+            return true;
+        }else{
+            return false;
         }
     }
     function createToken(){
