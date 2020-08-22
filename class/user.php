@@ -138,7 +138,7 @@ class User{
         $response['result']=true;
         // select all query
         $query = "SELECT
-                    user_profile.firstname, user_profile.middlename, user_profile.lastname, users.email, user_profile.status, user_profile.bikeID, user_profile.address, user_profile.contact, user_profile.profileImg
+                    user_profile.firstname, user_profile.middlename, user_profile.lastname, users.email, user_profile.status, user_profile.bikeID, user_profile.address, user_profile.contact
                 FROM
                     user_profile
                 LEFT JOIN users
@@ -261,9 +261,11 @@ class User{
         // execute query
         $stmt->execute();
         $row=array();
+        $ctr=1;
         if($stmt->rowCount() > 0){
             while($row1 = $stmt->fetch(PDO::FETCH_ASSOC)){
-                $row['data']['start'][]=$row1;
+                $row_s['start']=$row1;
+                // $row['data'][$ctr]['start']=$row1;
                 $query1 = "SELECT terminals.name, history.date, history.type, history.bikeID
                     FROM
                         history
@@ -276,10 +278,14 @@ class User{
                 $stmt1->execute();
                 if($stmt1->rowCount() > 0){
                     $row2 = $stmt1->fetch(PDO::FETCH_ASSOC);
-                    $row['data']['end'][]=$row2;
+                    $row_s['end']=$row2;
+                    // $row['data'][$ctr]['end']=$row2;
                 }else{
-                    $row['data']['end']['message']='currently in ride';
+                    $row_s['end']['message']="Currently in Ride.";
+                    // $row['data']['end']['message']='currently in ride';
                 }
+                $row['data'][]=$row_s;
+                $ctr+=1;
             }
             
             $row['result']=true;
